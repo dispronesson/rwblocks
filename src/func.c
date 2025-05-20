@@ -207,7 +207,7 @@ void modify_fields(off_t offset, car_s* exist_car) {
                 else {
                     fl.l_type = F_UNLCK;
                     fcntl(fd, F_SETLK, &fl);
-                    printf("Changes of original record by other process has been deteced! Read a new record...\n");
+                    printf("Changes of original record by other process has been detected! Read a new record...\n");
                     car_copy(exist_car, &car_new);
                 }
             }
