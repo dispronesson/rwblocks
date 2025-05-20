@@ -14,7 +14,7 @@ void interface() {
         else while (getchar() != '\n');
 
         if (strcmp(buf, "LST") == 0) print_records();
-        else if (strncmp(buf, "GET ", 4) == 0) parse_get(buf + 4);
+        else if (strncmp(buf, "GET", 3) == 0) parse_get(buf + 3);
         else if (strcmp(buf, "EXIT") == 0) return;
         else if (strcmp(buf, "\0") == 0);
         else fprintf(stderr, "error: %s: command not found...\n", buf);
@@ -22,7 +22,7 @@ void interface() {
 }
 
 void print_records() {
-    book_s book[10];
+    car_s car[10];
 
     struct flock fl = {
         .l_type = F_RDLCK,
@@ -37,7 +37,7 @@ void print_records() {
         exit(EXIT_FAILURE);
     }
 
-    if (pread(fd, book, sizeof(book), 0) != sizeof(book)) {
+    if (pread(fd, car, sizeof(car), 0) != sizeof(car)) {
         perror("error: read");
         close(fd);
         exit(EXIT_FAILURE);
@@ -47,11 +47,16 @@ void print_records() {
     fcntl(fd, F_SETLK, &fl);
 
     for (int i = 0; i < 10; i++) {
-        printf("%d. «%s» (%u) — %s\n", i + 1, book[i].title, book[i].year, book[i].author);
+        printf("%d. %s %s, %u hp\n", i + 1, car[i].brand, car[i].model, car[i].hp);
     }
 }
 
 void parse_get(char* str) {
+    if (*str == '\0') {
+        fprintf(stderr, "error: GET: missing operand\n");
+        return;
+    }
+
     if (*str < '0' || *str > '9') {
         fprintf(stderr, "error: GET: invalid operand\n");
         return;
@@ -69,7 +74,7 @@ void parse_get(char* str) {
         fprintf(stderr, "error: GET: overflow\n");
         return;
     }
-    if (index > 10) {
+    if (index == 0 || index > 10) {
         fprintf(stderr, "error: GET: incorrect index\n");
         return;
     }
@@ -78,13 +83,14 @@ void parse_get(char* str) {
 }
 
 void get_exist(uint64_t index) {
-    book_s exist_book;
+    car_s exist_car;
+    off_t offset = (index - 1) * sizeof(car_s);
 
     struct flock fl = {
         .l_type = F_RDLCK,
         .l_whence = SEEK_SET,
-        .l_start = (index - 1) * sizeof(book_s),
-        .l_len = sizeof(book_s)
+        .l_start = offset,
+        .l_len = sizeof(car_s)
     };
 
     if (fcntl(fd, F_SETLKW, &fl) == -1) {
@@ -93,8 +99,8 @@ void get_exist(uint64_t index) {
         exit(EXIT_FAILURE);
     }
 
-    size_t r = pread(fd, &exist_book, sizeof(book_s), (index - 1) * sizeof(book_s));
-    if (r != sizeof(book_s)) {
+    size_t r = pread(fd, &exist_car, sizeof(car_s), offset);
+    if (r != sizeof(car_s)) {
         perror("error: pread");
         close(fd);
         exit(EXIT_FAILURE);
@@ -103,27 +109,28 @@ void get_exist(uint64_t index) {
     fl.l_type = F_UNLCK;
     fcntl(fd, F_SETLK, &fl);
 
-    modify_fields(index, &exist_book);
+    modify_fields(offset, &exist_car);
 }
 
-void modify_fields(uint64_t index, book_s* exist_book) {
-    book_s book_cpy = {0};
-    book_copy(&book_cpy, exist_book);
+void modify_fields(off_t offset, car_s* exist_car) {
+    car_s car_cpy;
+    memset(&car_cpy, 0, sizeof(car_s));
+    car_copy(&car_cpy, exist_car);
 
     while (1) {
-        printf("Исходная запись:\n");
-        printf("«%s» (%u) — %s\n", exist_book->title, exist_book->year, exist_book->author);
+        printf("Original record:\n");
+        printf("\"%s %s, %u hp\"\n", exist_car->brand, exist_car->model, exist_car->hp);
 
-        if (!book_equal(&book_cpy, exist_book)) {
-            printf("Правки в записи:\n");
-            printf("«%s» (%u) — %s\n", book_cpy.title, book_cpy.year, book_cpy.author);
+        if (!car_equal(&car_cpy, exist_car)) {
+            printf("Edits in record:\n");
+            printf("\"%s %s, %u hp\"\n", car_cpy.brand, car_cpy.model, car_cpy.hp);
         }
 
-        printf("1. Изменить название\n");
-        printf("2. Изменить автора\n");
-        printf("3. Изменить год написания\n");
-        printf("4. Сохранить изменения\n");
-        printf("0. Назад\n");
+        printf("1. Change brand\n");
+        printf("2. Change model\n");
+        printf("3. Change horsepower value\n");
+        printf("4. Save changes\n");
+        printf("0. Cancel\n");
 
         char ch;
 
@@ -135,22 +142,22 @@ void modify_fields(uint64_t index, book_s* exist_book) {
 
             switch (ch) {
                 case '1':
-                    modify_str(&book_cpy, 1);
+                    modify_str(&car_cpy, 1);
                     flag = 0;
                     break;
                 case '2':
-                    modify_str(&book_cpy, 0);
+                    modify_str(&car_cpy, 0);
                     flag = 0;
                     break;
                 case '3':
-                    modify_year(&book_cpy);
+                    modify_hp(&car_cpy);
                     flag = 0;
                     break;
                 case '4':
                     flag = 2;
                     break;
                 case '0':
-                    printf("Отмена...\n");
+                    printf("Cancel...\n");
                     return;
                 case '\n':
                     break;
@@ -161,12 +168,12 @@ void modify_fields(uint64_t index, book_s* exist_book) {
         }
 
         if (flag == 2) {
-            if (!book_equal(&book_cpy, exist_book)) {
+            if (!car_equal(&car_cpy, exist_car)) {
                 struct flock fl = {
                     .l_type = F_WRLCK,
                     .l_whence = SEEK_SET,
-                    .l_start = (index - 1) * sizeof(book_s),
-                    .l_len = sizeof(book_s)
+                    .l_start = offset,
+                    .l_len = sizeof(car_s)
                 };
 
                 if (fcntl(fd, F_SETLKW, &fl) == -1) {
@@ -175,17 +182,17 @@ void modify_fields(uint64_t index, book_s* exist_book) {
                     exit(EXIT_FAILURE);
                 }
 
-                book_s book_new;
-                size_t r = pread(fd, &book_new, sizeof(book_s), (index - 1) * sizeof(book_s));
-                if (r != sizeof(book_s)) {
+                car_s car_new;
+                size_t r = pread(fd, &car_new, sizeof(car_s), offset);
+                if (r != sizeof(car_s)) {
                     perror("error: pread");
                     close(fd);
                     exit(EXIT_FAILURE);
                 }
 
-                if (book_equal(exist_book, &book_new)) {
-                    size_t w = pwrite(fd, &book_cpy, sizeof(book_s), (index - 1) * sizeof(book_s));
-                    if (w != sizeof(book_s)) {
+                if (car_equal(exist_car, &car_new)) {
+                    size_t w = pwrite(fd, &car_cpy, sizeof(car_s), offset);
+                    if (w != sizeof(car_s)) {
                         perror("error: pwrite");
                         close(fd);
                         exit(EXIT_FAILURE);
@@ -194,74 +201,66 @@ void modify_fields(uint64_t index, book_s* exist_book) {
                     fl.l_type = F_UNLCK;
                     fcntl(fd, F_SETLK, &fl);
 
-                    printf("Запись успешно обновлена!\n");
+                    printf("Record has been updated successfully!\n");
                     return;
                 }
                 else {
                     fl.l_type = F_UNLCK;
                     fcntl(fd, F_SETLK, &fl);
-                    printf("Обнаружено изменение исходной записи другим процессом! Перечитываю...\n");
-                    book_copy(exist_book, &book_new);
+                    printf("Changes of original record by other process has been deteced! Read a new record...\n");
+                    car_copy(exist_car, &car_new);
                 }
             }
             else {
-                printf("Изменений не обнаружено\n");
+                printf("No changes\n");
                 return;
             }
         }
     }
 }
 
-void modify_str(book_s* book, int op) {
-    char buf[128];
-    printf("Введите %s (макс. 64 символа): ", op ? "новое название" : "нового автора");
+void modify_str(car_s* car, int op) {
+    char buf[32];
+    printf("Enter %s: ", op ? "a new brand" : "a new model");
     fgets(buf, sizeof(buf), stdin);
 
     char* pos = strchr(buf, '\n');
     if (pos) *pos = '\0';
     else while (getchar() != '\n');
 
-    if (op) {
-        memset(book->title, 0, sizeof(book->title));
-        strcpy(book->title, buf);
-    }
-    else {
-        memset(book->author, 0, sizeof(book->author));
-        strcpy(book->author, buf);
-    }
+    if (op) strcpy(car->brand, buf);
+    else strcpy(car->model, buf);
 }
 
-void modify_year(book_s* book) {
-    int32_t year;
-    printf("Введите новый год написания: ");
+void modify_hp(car_s* car) {
+    int32_t hp;
+    printf("Enter a new horsepower value: ");
 
     while (1) {
-        if (scanf("%d", &year) != 1) {
-            fprintf(stderr, "Неверный ввод. Повторите попытку: ");
-            while (getchar() != '\n');
+        if (scanf("%d", &hp) != 1) {
+            fprintf(stderr, "error: Invalid input: Try again: ");
         }
-        else if (year <= 0 || year > 2100) {
-            fprintf(stderr, "Неверное значение года. Повторите попытку: ");
+        else if (hp <= 0 || hp > 10000) {
+            fprintf(stderr, "error: Invalid value: Try again: ");
         }
-        else {
-            while (getchar() != '\n');
-            break;
-        }
+        else break;
+        while (getchar() != '\n');
     }
+    while (getchar() != '\n');
 
-    book->year = (uint16_t)year;
+    car->hp = (uint16_t)hp;
 }
 
-int book_equal(const book_s* a, const book_s* b) {
-    return strcmp(a->title, b->title) == 0 &&
-           strcmp(a->author, b->author) == 0 &&
-           a->year == b->year;
+int car_equal(const car_s* a, const car_s* b) {
+    return strcmp(a->brand, b->brand) == 0 &&
+           strcmp(a->model, b->model) == 0 &&
+           a->hp == b->hp;
 }
 
-void book_copy(book_s* dest, const book_s* src) {
-    strcpy(dest->title, src->title);
-    strcpy(dest->author, src->author);
-    dest->year = src->year;
+void car_copy(car_s* dest, const car_s* src) {
+    strcpy(dest->brand, src->brand);
+    strcpy(dest->model, src->model);
+    dest->hp = src->hp;
 }
 
 void int_handle(int signo) {

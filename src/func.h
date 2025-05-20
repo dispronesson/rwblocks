@@ -14,20 +14,20 @@
 #include <signal.h>
 
 typedef struct {
-    char title[128];
-    char author[128];
-    uint16_t year;
-} book_s;
+    char brand[32];
+    char model[32];
+    uint16_t hp;
+} car_s;
 
 void interface();
 void print_records();
 void parse_get(char* str);
 void get_exist(uint64_t index);
-void modify_fields(uint64_t index, book_s* exist_book);
-void modify_str(book_s* book, int op);
-void modify_year(book_s* book);
-int book_equal(const book_s* a, const book_s* b);
-void book_copy(book_s* dest, const book_s* src);
+void modify_fields(off_t offset, car_s* exist_car);
+void modify_str(car_s* car, int op);
+void modify_hp(car_s* car);
+int car_equal(const car_s* a, const car_s* b);
+void car_copy(car_s* dest, const car_s* src);
 void int_handle(int signo);
 
 #endif //FUNC_H
